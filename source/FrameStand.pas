@@ -3,10 +3,10 @@ unit FrameStand;
 interface
 
 uses
-  Classes, SysUtils, Generics.Collections, System.Threading, System.Rtti
-, FMX.Types, FMX.Controls, FMX.Forms
-, SubjectStand
-;
+  System.Classes, System.SysUtils, System.Generics.Collections, System.Threading, System.Rtti,
+  System.Types,
+  FMX.Types, FMX.Controls, FMX.Forms,
+  SubjectStand;
 
 type
   TFrameClass = class of TFrame;
@@ -14,7 +14,17 @@ type
 
   FrameStandAttribute = class(ContextAttribute);
   FrameInfoAttribute = class(ContextAttribute);
-//  FrameIsOwnedAttribute = class(ContextAttribute);
+
+  // --- Layout Parameters Record ---
+  TFrameParams = record
+    Align: TAlignLayout;
+    Margins: TRectF;
+    Padding: TRectF;
+    class function Default: TFrameParams; static;
+    class function Create(AAlign: TAlignLayout; const AMargins, APadding: TRectF): TFrameParams; overload; static;
+    class function Create(AAlign: TAlignLayout; AMarginAll: Single = 0; APaddingAll: Single = 0): TFrameParams; overload; static;
+    procedure ApplyTo(AControl: TControl);
+  end;
 
   TFrameInfo<T: TFrame> = class(TSubjectInfo)
   private
@@ -41,7 +51,6 @@ type
     property FrameIsOwned: Boolean read FFrameIsOwned write FFrameIsOwned;
     property Frame: T read FFrame;
     property FrameStand: TFrameStand read GetFrameStand;
-
   end;
 
   TOnGetFrameClassEvent = procedure (const ASender: TFrameStand; var AParent: TFmxObject;
@@ -51,13 +60,19 @@ type
   private
     FOnGetFrameClass: TOnGetFrameClassEvent;
     FVisibleFrames : TList<TFrame>;
+    FFrameClasses: TList<TFrameClass>;
+    FFrameParams: TDictionary<TFrameClass, TFrameParams>;
+
+    // Property Getters/Setters
+    function GetFrameIndex: Integer;
+    procedure SetFrameIndex(const Value: Integer);
+    function GetActiveFrame: TFrame;
+    procedure SetActiveFrame(const Value: TFrame);
   protected
     FFrameInfos: TObjectDictionary<TFrame, TFrameInfo<TFrame>>;
     function GetCount: Integer; override;
-    function GetFrameClass<T: TFrame>(var AParent: TFmxObject;
-      var AStandStyleName: string): TFrameClass; overload;
-    function GetFrameClass(const AClassName: string; var AParent: TFmxObject;
-      var AStandStyleName: string): TFrameClass; overload;
+    function GetFrameClass<T: TFrame>(var AParent: TFmxObject; var AStandStyleName: string): TFrameClass; overload;
+    function GetFrameClass(const AClassName: string; var AParent: TFmxObject; var AStandStyleName: string): TFrameClass; overload;
     procedure DoAfterHide(const ASender: TSubjectStand; const ASubjectInfo: TSubjectInfo); override;
     procedure DoBeforeShow(const ASender: TSubjectStand; const ASubjectInfo: TSubjectInfo); override;
     procedure DoClose(const ASubject: TFmxObject); override;
@@ -83,27 +98,156 @@ type
     function Use(const AFrame: TFrame; const AParent: TFmxObject = nil;
       const AStandStyleName: string = ''): TFrameInfo<TFrame>; overload;
 
-
     function New<T: TFrame>(const AParent: TFmxObject = nil;
       const AStandStyleName: string = ''): TFrameInfo<T>; overload;
-
     function New(const AFrameClassName: string; const AParent: TFmxObject = nil;
       const AStandStyleName: string = ''): TFrameInfo<TFrame>; overload;
-
 
     function NewAndShow<T: TFrame>(const AParent: TFmxObject = nil;
       const AStandStyleName: string = ''; const AConfigProc: TProc<T> = nil;
       const AConfigFIProc: TProc<TFrameInfo<T>> = nil): TFrameInfo<T>;
 
+    // --- FRAME MANAGEMENT ---
+    procedure RegisterFrame(AFrameClass: TFrameClass); overload;
+    procedure RegisterFrame(AFrameClass: TFrameClass; const AParams: TFrameParams); overload;
+
+    // --> NEW ARRAY PARAMETER OVERLOADS <--
+    procedure RegisterFrame(const AFrameClasses: array of TFrameClass); overload;
+    procedure RegisterFrame(const AFrameClasses: array of TFrameClass; const AParams: TFrameParams); overload;
+
+    procedure SwitchFrame(AFrameClass: TFrameClass); overload;
+    procedure SwitchFrame(AFrameClass: TFrameClass; const AParams: TFrameParams); overload;
+    procedure SwitchFrame(AFrame: TFrame); overload;
+    procedure SwitchFrame(AIndex: Integer); overload;
+    procedure SwitchFrame(const AClassName: string); overload;
+
     property FrameInfos: TObjectDictionary<TFrame, TFrameInfo<TFrame>> read FFrameInfos;
     property VisibleFrames: TList<TFrame> read FVisibleFrames;
+    property FrameClasses: TList<TFrameClass> read FFrameClasses;
+
+    property FrameIndex: Integer read GetFrameIndex write SetFrameIndex;
+    property ActiveFrame: TFrame read GetActiveFrame write SetActiveFrame;
   published
     property OnGetSubjectClass: TOnGetFrameClassEvent read FOnGetFrameClass write FOnGetFrameClass;
   end;
 
 implementation
 
+{ TFrameParams }
+
+class function TFrameParams.Default: TFrameParams;
+begin
+  Result.Align := TAlignLayout.Client;
+  Result.Margins := TRectF.Empty;
+  Result.Padding := TRectF.Empty;
+end;
+
+class function TFrameParams.Create(AAlign: TAlignLayout; const AMargins, APadding: TRectF): TFrameParams;
+begin
+  Result.Align := AAlign;
+  Result.Margins := AMargins;
+  Result.Padding := APadding;
+end;
+
+class function TFrameParams.Create(AAlign: TAlignLayout; AMarginAll: Single = 0; APaddingAll: Single = 0): TFrameParams;
+begin
+  Result.Align := AAlign;
+  Result.Margins := TRectF.Create(AMarginAll, AMarginAll, AMarginAll, AMarginAll);
+  Result.Padding := TRectF.Create(APaddingAll, APaddingAll, APaddingAll, APaddingAll);
+end;
+
+procedure TFrameParams.ApplyTo(AControl: TControl);
+begin
+  if Assigned(AControl) then
+  begin
+    AControl.Align := Align;
+    AControl.Margins.Left := Margins.Left;
+    AControl.Margins.Top := Margins.Top;
+    AControl.Margins.Right := Margins.Right;
+    AControl.Margins.Bottom := Margins.Bottom;
+
+    AControl.Padding.Left := Padding.Left;
+    AControl.Padding.Top := Padding.Top;
+    AControl.Padding.Right := Padding.Right;
+    AControl.Padding.Bottom := Padding.Bottom;
+  end;
+end;
+
 { TFrameStand }
+
+constructor TFrameStand.Create(AOwner: TComponent);
+begin
+  inherited;
+  FFrameInfos := TObjectDictionary<TFrame, TFrameInfo<TFrame>>.Create();
+  FVisibleFrames := TList<TFrame>.Create;
+  FFrameClasses := TList<TFrameClass>.Create;
+  FFrameParams := TDictionary<TFrameClass, TFrameParams>.Create;
+end;
+
+destructor TFrameStand.Destroy;
+var
+  LKey: TFrame;
+begin
+  for LKey in FFrameInfos.Keys.ToArray do
+    Remove(LKey);
+  FreeAndNil(FFrameInfos);
+  FreeAndNil(FVisibleFrames);
+  FreeAndNil(FFrameClasses);
+  FreeAndNil(FFrameParams);
+
+  inherited;
+end;
+
+// ==========================================
+// --- PROPERTIES IMPLEMENTATION ---
+// ==========================================
+
+function TFrameStand.GetActiveFrame: TFrame;
+begin
+  Result := LastShownFrame;
+end;
+
+procedure TFrameStand.SetActiveFrame(const Value: TFrame);
+begin
+  if GetActiveFrame <> Value then
+  begin
+    if Assigned(Value) then
+      SwitchFrame(Value)
+    else
+    begin
+      for var LFrame in FVisibleFrames.ToArray do
+        FrameInfo(LFrame).Hide;
+    end;
+  end;
+end;
+
+function TFrameStand.GetFrameIndex: Integer;
+var
+  LActive: TFrame;
+begin
+  LActive := ActiveFrame;
+  if Assigned(LActive) then
+    Result := FFrameClasses.IndexOf(TFrameClass(LActive.ClassType))
+  else
+    Result := -1;
+end;
+
+procedure TFrameStand.SetFrameIndex(const Value: Integer);
+begin
+  if Value = -1 then
+    ActiveFrame := nil // Hide all
+  else if (Value >= 0) and (Value < FFrameClasses.Count) then
+  begin
+    if GetFrameIndex <> Value then
+      SwitchFrame(Value);
+  end
+  else
+    raise Exception.CreateFmt('TFrameStand.FrameIndex: Index out of bounds (%d)', [Value]);
+end;
+
+// ==========================================
+// --- STANDARD METHODS ---
+// ==========================================
 
 procedure TFrameStand.CloseAll(const ARestrictTo: TArray<TClass>);
 var
@@ -113,7 +257,6 @@ var
 begin
   LFrameInfos := FFrameInfos.Values.ToArray;
   LConsiderRestrictions := Length(ARestrictTo) > 0;
-
   for LFrameInfo in LFrameInfos do
   begin
     if (not LConsiderRestrictions) or ClassInArray(LFrameInfo.Frame, ARestrictTo) then
@@ -129,7 +272,6 @@ var
 begin
   LFrameInfos := FFrameInfos.Values.ToArray;
   LConsiderExceptions := Length(AExceptions) > 0;
-
   for LFrameInfo in LFrameInfos do
   begin
     if (not LConsiderExceptions) or not ClassInArray(LFrameInfo.Frame, AExceptions) then
@@ -137,34 +279,13 @@ begin
   end;
 end;
 
-constructor TFrameStand.Create(AOwner: TComponent);
-begin
-  inherited;
-  FFrameInfos := TObjectDictionary<TFrame, TFrameInfo<TFrame>>.Create();
-  FVisibleFrames := TList<TFrame>.Create;
-end;
-
-destructor TFrameStand.Destroy;
-var
-  LKey: TFrame;
-begin
-  for LKey in FFrameInfos.Keys.ToArray do
-    Remove(LKey);
-  FreeAndNil(FFrameInfos);
-  FreeAndNil(FVisibleFrames);
-
-  inherited;
-end;
-
-procedure TFrameStand.DoAfterHide(const ASender: TSubjectStand;
-  const ASubjectInfo: TSubjectInfo);
+procedure TFrameStand.DoAfterHide(const ASender: TSubjectStand; const ASubjectInfo: TSubjectInfo);
 begin
   inherited;
   FVisibleFrames.Remove(ASubjectInfo.Subject as TFrame);
 end;
 
-procedure TFrameStand.DoBeforeShow(const ASender: TSubjectStand;
-  const ASubjectInfo: TSubjectInfo);
+procedure TFrameStand.DoBeforeShow(const ASender: TSubjectStand; const ASubjectInfo: TSubjectInfo);
 begin
   inherited;
    FVisibleFrames.Add(ASubjectInfo.Subject as TFrame);
@@ -176,8 +297,7 @@ begin
   inherited;
 end;
 
-function TFrameStand.FrameInfo(
-  const AFrameClass: TFrameClass): TFrameInfo<TFrame>;
+function TFrameStand.FrameInfo(const AFrameClass: TFrameClass): TFrameInfo<TFrame>;
 var
   LPair: TPair<TFrame, TFrameInfo<TFrame>>;
 begin
@@ -208,20 +328,30 @@ begin
   Result := FFrameInfos.Count;
 end;
 
-function TFrameStand.GetFrameClass(const AClassName: string;
-  var AParent: TFmxObject; var AStandStyleName: string): TFrameClass;
+function TFrameStand.GetFrameClass(const AClassName: string; var AParent: TFmxObject; var AStandStyleName: string): TFrameClass;
 begin
   var LContext := TRttiContext.Create;
   var LType := LContext.FindType(AClassName);
 
   if not Assigned(LType) then
-    raise Exception.CreateFmt('Type not found: %s', [AClassName]);
+  begin
+    var LTypes := LContext.GetTypes;
+    for var LSearchType in LTypes do
+    begin
+      if SameText(LSearchType.Name, AClassName) then
+      begin
+        LType := LSearchType;
+        Break;
+      end;
+    end;
+  end;
 
+  if not Assigned(LType) then
+    raise Exception.CreateFmt('Type not found: %s', [AClassName]);
   if not (LType is TRttiInstanceType) then
     raise Exception.CreateFmt('Type %s is not an instance type', [AClassName]);
 
   var LInstanceType := LType as TRttiInstanceType;
-
   if not (LInstanceType.MetaclassType.InheritsFrom(TFrame)) then
     raise Exception.CreateFmt('Type %s is not a TFrame descendant', [AClassName]);
 
@@ -231,8 +361,7 @@ begin
     FOnGetFrameClass(Self, AParent, AStandStyleName, Result);
 end;
 
-function TFrameStand.GetFrameClass<T>(var AParent: TFmxObject;
-  var AStandStyleName: string): TFrameClass;
+function TFrameStand.GetFrameClass<T>(var AParent: TFmxObject; var AStandStyleName: string): TFrameClass;
 begin
   Result := TFrameClass(T);
   DoResponsiveLookup(TSubjectClass(Result), AStandStyleName, AParent);
@@ -256,7 +385,6 @@ var
 begin
   LFrameInfos := FFrameInfos.Values.ToArray;
   LConsiderRestrictions := Length(ARestrictTo) > 0;
-
   for LFrameInfo in LFrameInfos do
   begin
     if (not LConsiderRestrictions) or ClassInArray(LFrameInfo.Frame, ARestrictTo) then
@@ -272,7 +400,6 @@ var
 begin
   LFrameInfos := FFrameInfos.Values.ToArray;
   LConsiderExceptions := Length(AExceptions) > 0;
-
   for LFrameInfo in LFrameInfos do
   begin
     if (not LConsiderExceptions) or not ClassInArray(LFrameInfo.Frame, AExceptions) then
@@ -359,6 +486,146 @@ begin
       LInfo.Free;
     {$ENDIF}
   end;
+end;
+
+// ==========================================
+// --- FRAME MANAGEMENT IMPLEMENTATION ---
+// ==========================================
+
+procedure TFrameStand.RegisterFrame(AFrameClass: TFrameClass);
+begin
+  RegisterFrame(AFrameClass, TFrameParams.Default);
+end;
+
+procedure TFrameStand.RegisterFrame(AFrameClass: TFrameClass; const AParams: TFrameParams);
+begin
+  if not Assigned(AFrameClass) then Exit;
+
+  if not FFrameClasses.Contains(AFrameClass) then
+    FFrameClasses.Add(AFrameClass);
+
+  // Store or update layout parameters
+  FFrameParams.AddOrSetValue(AFrameClass, AParams);
+end;
+
+// --> NEW ARRAY IMPLEMENTATIONS <--
+
+procedure TFrameStand.RegisterFrame(const AFrameClasses: array of TFrameClass);
+var
+  LFrameClass: TFrameClass;
+begin
+  for LFrameClass in AFrameClasses do
+    RegisterFrame(LFrameClass);
+end;
+
+procedure TFrameStand.RegisterFrame(const AFrameClasses: array of TFrameClass; const AParams: TFrameParams);
+var
+  LFrameClass: TFrameClass;
+begin
+  for LFrameClass in AFrameClasses do
+    RegisterFrame(LFrameClass, AParams);
+end;
+
+// ---------------------------------
+
+procedure TFrameStand.SwitchFrame(AFrameClass: TFrameClass);
+var
+  LParams: TFrameParams;
+begin
+  // Fallback to default if no custom params were registered
+  if not FFrameParams.TryGetValue(AFrameClass, LParams) then
+    LParams := TFrameParams.Default;
+
+  SwitchFrame(AFrameClass, LParams);
+end;
+
+procedure TFrameStand.SwitchFrame(AFrameClass: TFrameClass; const AParams: TFrameParams);
+var
+  LFrame: TFrame;
+  LTargetInfo: TFrameInfo<TFrame>;
+begin
+  if not Assigned(AFrameClass) then Exit;
+
+  LTargetInfo := FrameInfo(AFrameClass);
+  if not Assigned(LTargetInfo) then
+    LTargetInfo := New(AFrameClass.ClassName); // Lazy Load
+
+  // Apply layout parameters (Align, Margin, Padding) to the physical TFrame
+  AParams.ApplyTo(LTargetInfo.Frame);
+
+  for LFrame in FVisibleFrames.ToArray do
+  begin
+    if LFrame <> LTargetInfo.Frame then
+      FrameInfo(LFrame).Hide;
+  end;
+
+  LTargetInfo.Show();
+end;
+
+procedure TFrameStand.SwitchFrame(AFrame: TFrame);
+var
+  LFrame: TFrame;
+  LTargetInfo: TFrameInfo<TFrame>;
+  LParams: TFrameParams;
+begin
+  if not Assigned(AFrame) then Exit;
+
+  LTargetInfo := FrameInfo(AFrame);
+  if not Assigned(LTargetInfo) then
+    raise Exception.Create('TFrameStand.SwitchFrame: Frame instance is not managed by this FrameStand.');
+
+  // Check if there are default parameters assigned for its class type
+  if not FFrameParams.TryGetValue(TFrameClass(AFrame.ClassType), LParams) then
+    LParams := TFrameParams.Default;
+
+  LParams.ApplyTo(AFrame);
+
+  // Hide non-active frames
+  for LFrame in FVisibleFrames.ToArray do
+  begin
+    if LFrame <> AFrame then
+      FrameInfo(LFrame).Hide;
+  end;
+
+  LTargetInfo.Show();
+end;
+
+procedure TFrameStand.SwitchFrame(AIndex: Integer);
+begin
+  if (AIndex >= 0) and (AIndex < FFrameClasses.Count) then
+    SwitchFrame(FFrameClasses[AIndex])
+  else
+    raise Exception.CreateFmt('TFrameStand.SwitchFrame: Index out of bounds (%d)', [AIndex]);
+end;
+
+procedure TFrameStand.SwitchFrame(const AClassName: string);
+var
+  LFrameClass, LTargetClass: TFrameClass;
+  LDummyParent: TFmxObject;
+  LDummyStand: string;
+begin
+  LTargetClass := nil;
+
+  for LFrameClass in FFrameClasses do
+  begin
+    if SameText(LFrameClass.ClassName, AClassName) then
+    begin
+      LTargetClass := LFrameClass;
+      Break;
+    end;
+  end;
+
+  if not Assigned(LTargetClass) then
+  begin
+    LDummyParent := nil;
+    LDummyStand := '';
+    LTargetClass := GetFrameClass(AClassName, LDummyParent, LDummyStand);
+  end;
+
+  if Assigned(LTargetClass) then
+    SwitchFrame(LTargetClass)
+  else
+    raise Exception.CreateFmt('TFrameStand.SwitchFrame: Cannot find frame class "%s"', [AClassName]);
 end;
 
 function TFrameStand.Use(const AFrame: TFrame; const AParent: TFmxObject;

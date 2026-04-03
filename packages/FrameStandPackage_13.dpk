@@ -26,7 +26,6 @@ package FrameStandPackage_13;
 {$DEFINE RELEASE}
 {$ENDIF IMPLICITBUILDING}
 {$DESCRIPTION 'TFrameStand and TFormStand Runtime Package'}
-{$LIBSUFFIX AUTO}
 {$RUNONLY}
 {$IMPLICITBUILD ON}
 

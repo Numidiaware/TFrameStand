@@ -1,5 +1,5 @@
 ﻿// CodeGear C++Builder
-// Copyright (c) 1995, 2025 by Embarcadero Technologies, Inc.
+// Copyright (c) 1995, 2026 by Embarcadero Technologies, Inc.
 // All rights reserved
 
 // (DO NOT EDIT: machine generated header) 'FrameStandPackage_13.dpk' rev: 37.00 (Windows)
@@ -116,7 +116,6 @@
 #include <FMX.Types.hpp>	// (fmx)
 #include <FMX.Platform.hpp>	// (fmx)
 #include <FMX.Controls.hpp>	// (fmx)
-// SO_SFX: 370
 // PRG_EXT: .bpl
 // BPI_DIR: ..\lib\cpp
 // OBJ_DIR: ..\lib\cpp

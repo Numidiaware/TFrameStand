@@ -27,14 +27,13 @@ package dclFrameStandPackage_13;
 {$DEFINE RELEASE}
 {$ENDIF IMPLICITBUILDING}
 {$DESCRIPTION 'TFrameStand and TFormStand Designtime Package'}
-{$LIBSUFFIX AUTO}
 {$DESIGNONLY}
 {$IMPLICITBUILD ON}
 
 requires
+  FrameStandPackage_13,
   rtl,
-  fmx,
-  FrameStandPackage_11_1;
+  fmx;
 
 contains
   ComponentRegistration in '..\source\ComponentRegistration.pas',
