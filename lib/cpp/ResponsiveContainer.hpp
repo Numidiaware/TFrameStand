@@ -37,7 +37,7 @@ class DELPHICLASS TResponsiveContainer;
 //-- type declarations -------------------------------------------------------
 typedef Fmx::Types::TFmxObject TSubject;
 
-typedef System::TMetaClass* TSubjectClass;
+_DECLARE_METACLASS(System::TMetaClass, TSubjectClass);
 
 struct DECLSPEC_DRECORD TBreakpoint
 {
@@ -95,7 +95,6 @@ public:
 };
 
 
-#pragma pack(push,4)
 class PASCALIMPLEMENTATION TResponsiveContainer : public System::TObject
 {
 	typedef System::TObject inherited;
@@ -116,7 +115,6 @@ public:
 	__property TBreakpoints* Breakpoints = {read=FBreakpoints};
 };
 
-#pragma pack(pop)
 
 //-- var, const, procedure ---------------------------------------------------
 }	/* namespace Responsivecontainer */

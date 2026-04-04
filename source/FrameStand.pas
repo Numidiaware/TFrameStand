@@ -112,8 +112,8 @@ type
     procedure RegisterFrame(AFrameClass: TFrameClass; const AParams: TFrameParams); overload;
 
     // --> NEW ARRAY PARAMETER OVERLOADS <--
-    procedure RegisterFrame(const AFrameClasses: array of TFrameClass); overload;
-    procedure RegisterFrame(const AFrameClasses: array of TFrameClass; const AParams: TFrameParams); overload;
+    procedure RegisterFrames(const AFrameClasses: array of TFrameClass); overload;
+    procedure RegisterFrames(const AFrameClasses: array of TFrameClass; const AParams: TFrameParams); overload;
 
     procedure SwitchFrame(AFrameClass: TFrameClass); overload;
     procedure SwitchFrame(AFrameClass: TFrameClass; const AParams: TFrameParams); overload;
@@ -510,7 +510,7 @@ end;
 
 // --> NEW ARRAY IMPLEMENTATIONS <--
 
-procedure TFrameStand.RegisterFrame(const AFrameClasses: array of TFrameClass);
+procedure TFrameStand.RegisterFrames(const AFrameClasses: array of TFrameClass);
 var
   LFrameClass: TFrameClass;
 begin
@@ -518,7 +518,7 @@ begin
     RegisterFrame(LFrameClass);
 end;
 
-procedure TFrameStand.RegisterFrame(const AFrameClasses: array of TFrameClass; const AParams: TFrameParams);
+procedure TFrameStand.RegisterFrames(const AFrameClasses: array of TFrameClass; const AParams: TFrameParams);
 var
   LFrameClass: TFrameClass;
 begin
