@@ -30,6 +30,7 @@ type
   private
     FFrame: T;
     FFrameIsOwned: Boolean;
+    FKeepAlive: Boolean;
     function GetFrameStand: TFrameStand;
   protected
     function GetSubject: TSubject; override;
@@ -49,6 +50,7 @@ type
     procedure Show(); overload;
 
     property FrameIsOwned: Boolean read FFrameIsOwned write FFrameIsOwned;
+    property KeepAlive: Boolean read FKeepAlive write FKeepAlive;
     property Frame: T read FFrame;
     property FrameStand: TFrameStand read GetFrameStand;
   end;
@@ -62,6 +64,7 @@ type
     FVisibleFrames : TList<TFrame>;
     FFrameClasses: TList<TFrameClass>;
     FFrameParams: TDictionary<TFrameClass, TFrameParams>;
+    FKeepAlive: Boolean;
 
     // Property Getters/Setters
     function GetFrameIndex: Integer;
@@ -93,6 +96,7 @@ type
     function GetFrameInfo<T: TFrame>(const ANewIfNotFound: Boolean = True;
       const AParent: TFmxObject = nil; const AStandStyleName: string = ''): TFrameInfo<T>;
 
+    // Frame setup and usage
     function Use<T: TFrame>(const AFrame: T; const AParent: TFmxObject = nil;
       const AStandStyleName: string = ''): TFrameInfo<T>; overload;
     function Use(const AFrame: TFrame; const AParent: TFmxObject = nil;
@@ -111,7 +115,6 @@ type
     procedure RegisterFrame(AFrameClass: TFrameClass); overload;
     procedure RegisterFrame(AFrameClass: TFrameClass; const AParams: TFrameParams); overload;
 
-    // --> NEW ARRAY PARAMETER OVERLOADS <--
     procedure RegisterFrames(const AFrameClasses: array of TFrameClass); overload;
     procedure RegisterFrames(const AFrameClasses: array of TFrameClass; const AParams: TFrameParams); overload;
 
@@ -129,6 +132,7 @@ type
     property ActiveFrame: TFrame read GetActiveFrame write SetActiveFrame;
   published
     property OnGetSubjectClass: TOnGetFrameClassEvent read FOnGetFrameClass write FOnGetFrameClass;
+    property KeepAlive: Boolean read FKeepAlive write FKeepAlive default True;
   end;
 
 implementation
@@ -182,6 +186,7 @@ begin
   FVisibleFrames := TList<TFrame>.Create;
   FFrameClasses := TList<TFrameClass>.Create;
   FFrameParams := TDictionary<TFrameClass, TFrameParams>.Create;
+  FKeepAlive := True; // Maintain frames in memory by default
 end;
 
 destructor TFrameStand.Destroy;
@@ -283,6 +288,19 @@ procedure TFrameStand.DoAfterHide(const ASender: TSubjectStand; const ASubjectIn
 begin
   inherited;
   FVisibleFrames.Remove(ASubjectInfo.Subject as TFrame);
+
+  var LFrameInfo := FrameInfo(ASubjectInfo.Subject as TFrame);
+  if Assigned(LFrameInfo) and not LFrameInfo.KeepAlive and (LFrameInfo.Status <> TSubjectStatus.Closing) then
+  begin
+    // Safely defer destruction to avoid executing Close within the thread dispatch stack of the hide transition
+    TDelayedAction.Execute(DefaultHideAndCloseDeferTimeMS,
+      procedure
+      begin
+        if FFrameInfos.ContainsKey(LFrameInfo.Frame) and (LFrameInfo.Status <> TSubjectStatus.Closing) then
+          LFrameInfo.Close;
+      end
+    );
+  end;
 end;
 
 procedure TFrameStand.DoBeforeShow(const ASender: TSubjectStand; const ASubjectInfo: TSubjectInfo);
@@ -306,6 +324,10 @@ begin
   begin
     if LPair.Key is AFrameClass then
     begin
+      // If the matched frame is not meant to be kept alive and is currently parting/closing,
+      // treat it as absent to force instantiating a fresh one.
+      if not LPair.Value.KeepAlive and (LPair.Value.Status in [TSubjectStatus.Hiding, TSubjectStatus.Hidden, TSubjectStatus.Closing]) then
+        Continue;
       Result := LPair.Value;
       Break;
     end;
@@ -414,6 +436,10 @@ begin
     Result := FVisibleFrames.Last;
 end;
 
+// ==========================================
+// --- CREATION HELPER OVERLOADS ---
+// ==========================================
+
 function TFrameStand.New(const AFrameClassName: string;
   const AParent: TFmxObject; const AStandStyleName: string): TFrameInfo<TFrame>;
 var
@@ -504,11 +530,8 @@ begin
   if not FFrameClasses.Contains(AFrameClass) then
     FFrameClasses.Add(AFrameClass);
 
-  // Store or update layout parameters
   FFrameParams.AddOrSetValue(AFrameClass, AParams);
 end;
-
-// --> NEW ARRAY IMPLEMENTATIONS <--
 
 procedure TFrameStand.RegisterFrames(const AFrameClasses: array of TFrameClass);
 var
@@ -532,7 +555,6 @@ procedure TFrameStand.SwitchFrame(AFrameClass: TFrameClass);
 var
   LParams: TFrameParams;
 begin
-  // Fallback to default if no custom params were registered
   if not FFrameParams.TryGetValue(AFrameClass, LParams) then
     LParams := TFrameParams.Default;
 
@@ -548,9 +570,8 @@ begin
 
   LTargetInfo := FrameInfo(AFrameClass);
   if not Assigned(LTargetInfo) then
-    LTargetInfo := New(AFrameClass.ClassName); // Lazy Load
+    LTargetInfo := New(AFrameClass.ClassName); // Instantiates a fresh frame on demand
 
-  // Apply layout parameters (Align, Margin, Padding) to the physical TFrame
   AParams.ApplyTo(LTargetInfo.Frame);
 
   for LFrame in FVisibleFrames.ToArray do
@@ -574,13 +595,11 @@ begin
   if not Assigned(LTargetInfo) then
     raise Exception.Create('TFrameStand.SwitchFrame: Frame instance is not managed by this FrameStand.');
 
-  // Check if there are default parameters assigned for its class type
   if not FFrameParams.TryGetValue(TFrameClass(AFrame.ClassType), LParams) then
     LParams := TFrameParams.Default;
 
   LParams.ApplyTo(AFrame);
 
-  // Hide non-active frames
   for LFrame in FVisibleFrames.ToArray do
   begin
     if LFrame <> AFrame then
@@ -665,6 +684,7 @@ begin
 
   FFrame := AFrame;
   FFrameIsOwned := False;
+  FKeepAlive := AFrameStand.KeepAlive; // Inherit default lifetime setting from FrameStand
 
   inherited Create(AFrameStand, AFrame, AParent, AStandStyleName);
 end;

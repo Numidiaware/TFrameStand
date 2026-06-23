@@ -86,6 +86,7 @@ template<typename T> class PASCALIMPLEMENTATION TFrameInfo__1 : public Subjectst
 private:
 	T FFrame;
 	bool FFrameIsOwned;
+	bool FKeepAlive;
 	TFrameStand* __fastcall GetFrameStand();
 	
 protected:
@@ -100,6 +101,7 @@ public:
 	System::Threading::_di_ITask __fastcall Show _DEPRECATED_ATTRIBUTE0 (const System::DelphiInterface<System::Sysutils::TProc__1<TFrameInfo__1<T>*> > ABackgroundTask = (System::DelphiInterface<System::Sysutils::TProc__1<TFrameInfo__1<T>*> >)(0x0), const System::DelphiInterface<System::Sysutils::TProc__1<TFrameInfo__1<T>*> > AOnTaskComplete = (System::DelphiInterface<System::Sysutils::TProc__1<TFrameInfo__1<T>*> >)(0x0), const bool AOnTaskCompleteSynchronized = true)/* overload */;
 	void __fastcall Show()/* overload */;
 	__property bool FrameIsOwned = {read=FFrameIsOwned, write=FFrameIsOwned, nodefault};
+	__property bool KeepAlive = {read=FKeepAlive, write=FKeepAlive, nodefault};
 	__property T Frame = {read=FFrame};
 	__property TFrameStand* FrameStand = {read=GetFrameStand};
 public:
@@ -119,6 +121,7 @@ private:
 	System::Generics::Collections::TList__1<Fmx::Forms::TFrame*>* FVisibleFrames;
 	System::Generics::Collections::TList__1<TFrameClass>* FFrameClasses;
 	System::Generics::Collections::TDictionary__2<TFrameClass,TFrameParams>* FFrameParams;
+	bool FKeepAlive;
 	int __fastcall GetFrameIndex();
 	void __fastcall SetFrameIndex(const int Value);
 	Fmx::Forms::TFrame* __fastcall GetActiveFrame();
@@ -168,6 +171,7 @@ public:
 	
 __published:
 	__property TOnGetFrameClassEvent OnGetSubjectClass = {read=FOnGetFrameClass, write=FOnGetFrameClass};
+	__property bool KeepAlive = {read=FKeepAlive, write=FKeepAlive, default=1};
 	/* Hoisted overloads: */
 	
 public:
